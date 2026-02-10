@@ -1,8 +1,6 @@
-use std::ffi::{c_int, c_uint};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::{array, cmp, iter, mem};
 
-use libc::ptrdiff_t;
 use strum::EnumCount;
 
 use crate::align::{Align16, AlignedVec64};
@@ -97,7 +95,7 @@ fn init_quant_tables(
     };
     for i in 0..len {
         let yac = if segmentation_is_enabled {
-            clip_u8(qidx as c_int + frame_hdr.segmentation.seg_data.d[i].delta_q as c_int)
+            clip_u8(qidx as i32 + frame_hdr.segmentation.seg_data.d[i].delta_q as i32)
         } else {
             qidx
         } as i16;
@@ -121,7 +119,7 @@ fn read_mv_component_diff(
     msac: &mut MsacContext,
     mv_comp: &mut CdfMvComponent,
     mv_prec: i32,
-) -> c_int {
+) -> i32 {
     let sign = rav1d_msac_decode_bool_adapt(msac, &mut mv_comp.sign.0);
     let cl = rav1d_msac_decode_symbol_adapt16(msac, &mut mv_comp.classes.0, 10);
     let mut up;
@@ -155,7 +153,7 @@ fn read_mv_component_diff(
     }
     let hp = hp as u16;
 
-    let diff = ((up << 3 | (fp as u16) << 1 | hp) + 1) as c_int;
+    let diff = ((up << 3 | (fp as u16) << 1 | hp) + 1) as i32;
 
     if sign {
         -diff
@@ -186,7 +184,7 @@ fn read_tx_tree(
     f: &Rav1dFrameData,
     ts_c: &mut Rav1dTileStateContext,
     from: TxfmSize,
-    depth: c_int,
+    depth: i32,
     masks: &mut [u16; 2],
     x_off: usize,
     y_off: usize,
@@ -199,9 +197,9 @@ fn read_tx_tree(
     let is_split;
 
     if depth < 2 && from > TxfmSize::S4x4 {
-        let cat = 2 * (TxfmSize::S64x64 as c_int - t_dim.max as c_int) - depth;
-        let a = ((*f.a[t.a].tx.index(bx4 as usize) as u8) < txw) as c_int;
-        let l = ((*t.l.tx.index(by4 as usize) as u8) < txh) as c_int;
+        let cat = 2 * (TxfmSize::S64x64 as i32 - t_dim.max as i32) - depth;
+        let a = ((*f.a[t.a].tx.index(bx4 as usize) as u8) < txw) as i32;
+        let l = ((*t.l.tx.index(by4 as usize) as u8) < txh) as i32;
 
         is_split = rav1d_msac_decode_bool_adapt(
             &mut ts_c.msac,
@@ -216,8 +214,8 @@ fn read_tx_tree(
     if is_split && t_dim.max > TxfmSize::S8x8 as _ {
         let sub = t_dim.sub;
         let sub_t_dim = &DAV1D_TXFM_DIMENSIONS[sub as usize];
-        let txsw = sub_t_dim.w as c_int;
-        let txsh = sub_t_dim.h as c_int;
+        let txsw = sub_t_dim.w as i32;
+        let txsh = sub_t_dim.h as i32;
 
         read_tx_tree(
             t,
@@ -324,10 +322,10 @@ fn find_matching_ref(
     f: &Rav1dFrameData,
     t: &Rav1dTaskContext,
     intra_edge_flags: EdgeFlags,
-    bw4: c_int,
-    bh4: c_int,
-    w4: c_int,
-    h4: c_int,
+    bw4: i32,
+    bh4: i32,
+    w4: i32,
+    h4: i32,
     have_left: bool,
     have_top: bool,
     r#ref: i8,
@@ -352,7 +350,7 @@ fn find_matching_ref(
             masks[0] |= 1;
             count = 1;
         }
-        let mut aw4 = bs(r2)[0] as c_int;
+        let mut aw4 = bs(r2)[0] as i32;
         if aw4 >= bw4 {
             let off = t.b.x & aw4 - 1;
             if off != 0 {
@@ -374,7 +372,7 @@ fn find_matching_ref(
                         return;
                     }
                 }
-                aw4 = bs(r2)[0] as c_int;
+                aw4 = bs(r2)[0] as i32;
                 mask <<= aw4;
                 x += aw4;
             }
@@ -392,7 +390,7 @@ fn find_matching_ref(
                 return;
             }
         }
-        let mut lh4 = bs(r2)[1] as c_int;
+        let mut lh4 = bs(r2)[1] as i32;
         if lh4 >= bh4 {
             if t.b.y & lh4 - 1 != 0 {
                 have_topleft = false;
@@ -410,7 +408,7 @@ fn find_matching_ref(
                         return;
                     }
                 }
-                lh4 = bs(r2)[1] as c_int;
+                lh4 = bs(r2)[1] as i32;
                 mask <<= lh4;
                 y += lh4;
             }
@@ -431,8 +429,8 @@ fn find_matching_ref(
 fn derive_warpmv(
     r: &DisjointMut<AlignedVec64<RefMvsBlock>>,
     t: &Rav1dTaskContext,
-    bw4: c_int,
-    bh4: c_int,
+    bw4: i32,
+    bh4: i32,
     masks: &[u64; 2],
     mv: Mv,
     mut wmp: Rav1dWarpedMotionParams,
@@ -547,8 +545,7 @@ fn derive_warpmv(
 fn findoddzero(buf: &[u8]) -> bool {
     buf.iter()
         .enumerate()
-        .find(|(i, &e)| i & 1 == 1 && e == 0)
-        .is_some()
+        .any(|(i, &e)| i & 1 == 1 && e == 0)
 }
 
 fn order_palette(
@@ -635,16 +632,16 @@ fn read_pal_indices(
     pal_idx: Option<&mut [u8]>, // if None, use pal_tmp instead of pal_idx
     pal_sz: u8,
     pl: bool,
-    w4: c_int,
-    h4: c_int,
-    bw4: c_int,
-    bh4: c_int,
+    w4: i32,
+    h4: i32,
+    bw4: i32,
+    bh4: i32,
 ) {
     let [w4, h4, bw4, bh4] = [w4, h4, bw4, bh4].map(|n| usize::try_from(n).unwrap());
     let pli = pl as usize;
 
     let stride = bw4 * 4;
-    pal_tmp[0] = rav1d_msac_decode_uniform(&mut ts_c.msac, pal_sz as c_uint) as u8;
+    pal_tmp[0] = rav1d_msac_decode_uniform(&mut ts_c.msac, pal_sz as u32) as u8;
     let color_map_cdf = &mut ts_c.cdf.m.color_map[pli][pal_sz as usize - 2];
     let ScratchPal {
         pal_order: order,
@@ -694,8 +691,8 @@ fn read_vartx_tree(
     ts_c: &mut Rav1dTileStateContext,
     b: &Av1Block,
     bs: BlockSize,
-    bx4: c_int,
-    by4: c_int,
+    bx4: i32,
+    by4: i32,
 ) -> VarTx {
     let b_dim = bs.dimensions();
     let bw4 = b_dim[0] as usize;
@@ -746,12 +743,12 @@ fn read_vartx_tree(
             for x_off in 0..bw4 / w {
                 read_tx_tree(t, f, ts_c, max_ytx, 0, &mut tx_split, x_off, y_off);
                 // contexts are updated inside read_tx_tree()
-                t.b.x += w as c_int;
+                t.b.x += w as i32;
             }
-            t.b.x -= bw4 as c_int;
-            t.b.y += h as c_int;
+            t.b.x -= bw4 as i32;
+            t.b.y += h as i32;
         }
-        t.b.y -= bh4 as c_int;
+        t.b.y -= bh4 as i32;
         if debug_block_info!(f, t.b) {
             println!(
                 "Post-vartxtree[{}/{}]: r={}",
@@ -775,10 +772,10 @@ fn read_vartx_tree(
 fn get_prev_frame_segid(
     frame_hdr: &Rav1dFrameHeader,
     b: Bxy,
-    w4: c_int,
-    h4: c_int,
+    w4: i32,
+    h4: i32,
     ref_seg_map: &DisjointMutSlice<SegmentId>,
-    stride: ptrdiff_t,
+    stride: isize,
 ) -> SegmentId {
     assert!(frame_hdr.primary_ref_frame != RAV1D_PRIMARY_REF_NONE);
 
@@ -893,24 +890,24 @@ fn splat_intraref(
 }
 
 fn mc_lowest_px(
-    dst: &mut c_int,
-    by4: c_int,
-    bh4: c_int,
+    dst: &mut i32,
+    by4: i32,
+    bh4: i32,
     mvy: i16,
-    ss_ver: c_int,
+    ss_ver: i32,
     smp: &ScalableMotionParams,
 ) {
-    let mvy = mvy as c_int;
+    let mvy = mvy as i32;
 
     let v_mul = 4 >> ss_ver;
     if smp.scale == 0 {
         let my = mvy >> 3 + ss_ver;
-        let dy = mvy & 15 >> (ss_ver == 0) as c_int;
-        *dst = cmp::max(*dst, (by4 + bh4) * v_mul + my + 4 * (dy != 0) as c_int);
+        let dy = mvy & 15 >> (ss_ver == 0) as i32;
+        *dst = cmp::max(*dst, (by4 + bh4) * v_mul + my + 4 * (dy != 0) as i32);
     } else {
-        let mut y = (by4 * v_mul << 4) + mvy * (1 << (ss_ver == 0) as c_int);
+        let mut y = (by4 * v_mul << 4) + mvy * (1 << (ss_ver == 0) as i32);
         let tmp = y as i64 * smp.scale as i64 + ((smp.scale - 0x4000) * 8) as i64;
-        y = apply_sign64((tmp.abs() + 128 >> 8) as c_int, tmp) + 32;
+        y = apply_sign64((tmp.abs() + 128 >> 8) as i32, tmp) + 32;
         let bottom = (y + (bh4 * v_mul - 1) * smp.step >> 10) + 1 + 4;
         *dst = cmp::max(*dst, bottom);
     };
@@ -919,33 +916,33 @@ fn mc_lowest_px(
 #[inline(always)]
 fn affine_lowest_px(
     t: &Rav1dTaskContext,
-    dst: &mut c_int,
+    dst: &mut i32,
     b_dim: &[u8; 4],
     wmp: &Rav1dWarpedMotionParams,
-    ss_ver: c_int,
-    ss_hor: c_int,
+    ss_ver: i32,
+    ss_hor: i32,
 ) {
     let h_mul = 4 >> ss_hor;
     let v_mul = 4 >> ss_ver;
-    assert!(b_dim[0] as c_int * h_mul & 7 == 0 && b_dim[1] as c_int * v_mul & 7 == 0);
+    assert!(b_dim[0] as i32 * h_mul & 7 == 0 && b_dim[1] as i32 * v_mul & 7 == 0);
     let mat = &wmp.matrix;
-    let y = b_dim[1] as c_int * v_mul - 8;
+    let y = b_dim[1] as i32 * v_mul - 8;
     let src_y = t.b.y * 4 + ((y + 4) << ss_ver);
     let mat5_y = mat[5] as i64 * src_y as i64 + mat[1] as i64;
     let mut x = 0;
-    while x < b_dim[0] as c_int * h_mul {
+    while x < b_dim[0] as i32 * h_mul {
         let src_x = t.b.x * 4 + ((x + 4) << ss_hor);
         let mvy = mat[4] as i64 * src_x as i64 + mat5_y >> ss_ver;
-        let dy = (mvy >> 16) as c_int - 4;
+        let dy = (mvy >> 16) as i32 - 4;
         *dst = cmp::max(*dst, dy + 4 + 8);
-        x += cmp::max(8, b_dim[0] as c_int * h_mul - 8);
+        x += cmp::max(8, b_dim[0] as i32 * h_mul - 8);
     }
 }
 
 #[inline(never)]
 fn affine_lowest_px_luma(
     t: &Rav1dTaskContext,
-    dst: &mut c_int,
+    dst: &mut i32,
     b_dim: &[u8; 4],
     wmp: &Rav1dWarpedMotionParams,
 ) {
@@ -956,7 +953,7 @@ fn affine_lowest_px_luma(
 fn affine_lowest_px_chroma(
     t: &Rav1dTaskContext,
     layout: Rav1dPixelLayout,
-    dst: &mut c_int,
+    dst: &mut i32,
     b_dim: &[u8; 4],
     wmp: &Rav1dWarpedMotionParams,
 ) {
@@ -969,7 +966,7 @@ fn affine_lowest_px_chroma(
             dst,
             b_dim,
             wmp,
-            (layout & Rav1dPixelLayout::I420) as c_int,
+            (layout & Rav1dPixelLayout::I420) as i32,
             1,
         );
     };
@@ -981,30 +978,30 @@ fn obmc_lowest_px(
     ts: &Rav1dTileState,
     layout: Rav1dPixelLayout,
     svc: &[[ScalableMotionParams; 2]; 7],
-    dst: &mut [[c_int; 2]; 7],
+    dst: &mut [[i32; 2]; 7],
     is_chroma: bool,
     b_dim: &[u8; 4],
-    _bx4: c_int,
-    _by4: c_int,
-    w4: c_int,
-    h4: c_int,
+    _bx4: i32,
+    _by4: i32,
+    w4: i32,
+    h4: i32,
 ) {
     assert!(t.b.x & 1 == 0 && t.b.y & 1 == 0);
     let ri = &t.rt.r[(t.b.y as usize & 31) + 5 - 1..];
-    let ss_ver = (is_chroma && layout == Rav1dPixelLayout::I420) as c_int;
-    let ss_hor = (is_chroma && layout != Rav1dPixelLayout::I444) as c_int;
+    let ss_ver = (is_chroma && layout == Rav1dPixelLayout::I420) as i32;
+    let ss_hor = (is_chroma && layout != Rav1dPixelLayout::I444) as i32;
     let h_mul = 4 >> ss_hor;
     let v_mul = 4 >> ss_ver;
     if t.b.y > ts.tiling.row_start
-        && (!is_chroma || b_dim[0] as c_int * h_mul + b_dim[1] as c_int * v_mul >= 16)
+        && (!is_chroma || b_dim[0] as i32 * h_mul + b_dim[1] as i32 * v_mul >= 16)
     {
         let mut i = 0;
         let mut x = 0;
-        while x < w4 && i < cmp::min(b_dim[2] as c_int, 4) {
+        while x < w4 && i < cmp::min(b_dim[2] as i32, 4) {
             let a_r = *r.index(ri[0] + t.b.x as usize + x as usize + 1);
             let a_b_dim = a_r.bs.dimensions();
-            if a_r.r#ref.r#ref[0] as c_int > 0 {
-                let oh4 = cmp::min(b_dim[1] as c_int, 16) >> 1;
+            if a_r.r#ref.r#ref[0] as i32 > 0 {
+                let oh4 = cmp::min(b_dim[1] as i32, 16) >> 1;
                 mc_lowest_px(
                     &mut dst[a_r.r#ref.r#ref[0] as usize - 1][is_chroma as usize],
                     t.b.y,
@@ -1015,17 +1012,17 @@ fn obmc_lowest_px(
                 );
                 i += 1;
             }
-            x += cmp::max(a_b_dim[0] as c_int, 2);
+            x += cmp::max(a_b_dim[0] as i32, 2);
         }
     }
     if t.b.x > ts.tiling.col_start {
         let mut i = 0;
         let mut y = 0;
-        while y < h4 && i < cmp::min(b_dim[3] as c_int, 4) {
+        while y < h4 && i < cmp::min(b_dim[3] as i32, 4) {
             let l_r = *r.index(ri[y as usize + 1 + 1] + t.b.x as usize - 1);
             let l_b_dim = l_r.bs.dimensions();
-            if l_r.r#ref.r#ref[0] as c_int > 0 {
-                let oh4 = iclip(l_b_dim[1] as c_int, 2, b_dim[1] as c_int);
+            if l_r.r#ref.r#ref[0] as i32 > 0 {
+                let oh4 = iclip(l_b_dim[1] as i32, 2, b_dim[1] as i32);
                 mc_lowest_px(
                     &mut dst[l_r.r#ref.r#ref[0] as usize - 1][is_chroma as usize],
                     t.b.y + y,
@@ -1036,7 +1033,7 @@ fn obmc_lowest_px(
                 );
                 i += 1;
             }
-            y += cmp::max(l_b_dim[1] as c_int, 2);
+            y += cmp::max(l_b_dim[1] as i32, 2);
         }
     }
 }
@@ -1080,12 +1077,12 @@ fn decode_b(
     let b_dim = bs.dimensions();
     let bx4 = t.b.x & 31;
     let by4 = t.b.y & 31;
-    let ss_ver = (f.cur.p.layout == Rav1dPixelLayout::I420) as c_int;
-    let ss_hor = (f.cur.p.layout != Rav1dPixelLayout::I444) as c_int;
+    let ss_ver = (f.cur.p.layout == Rav1dPixelLayout::I420) as i32;
+    let ss_hor = (f.cur.p.layout != Rav1dPixelLayout::I444) as i32;
     let cbx4 = bx4 >> ss_hor;
     let cby4 = by4 >> ss_ver;
-    let bw4 = b_dim[0] as c_int;
-    let bh4 = b_dim[1] as c_int;
+    let bw4 = b_dim[0] as i32;
+    let bh4 = b_dim[1] as i32;
     let w4 = cmp::min(bw4, f.bw - t.b.x);
     let h4 = cmp::min(bh4, f.bh - t.b.y);
     let cbw4 = bw4 + ss_hor >> ss_hor;
@@ -1427,7 +1424,7 @@ fn decode_b(
     }
 
     // delta-q/lf
-    let not_sb128 = (seq_hdr.sb128 == 0) as c_int;
+    let not_sb128 = (seq_hdr.sb128 == 0) as i32;
     if t.b.x & (31 >> not_sb128) == 0 && t.b.y & (31 >> not_sb128) == 0 {
         let prev_qidx = ts.last_qidx.get();
         let have_delta_q = frame_hdr.delta.q.present != 0
@@ -1444,11 +1441,11 @@ fn decode_b(
         if have_delta_q {
             let mut delta_q =
                 rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut ts_c.cdf.m.delta_q.0, 3)
-                    as c_int;
+                    as i32;
             if delta_q == 3 {
                 let n_bits = 1 + rav1d_msac_decode_bools(&mut ts_c.msac, 3) as u8;
                 delta_q =
-                    (rav1d_msac_decode_bools(&mut ts_c.msac, n_bits) + 1 + (1 << n_bits)) as c_int;
+                    (rav1d_msac_decode_bools(&mut ts_c.msac, n_bits) + 1 + (1 << n_bits)) as i32;
             }
             if delta_q != 0 {
                 if rav1d_msac_decode_bool_equi(&mut ts_c.msac) {
@@ -1456,7 +1453,7 @@ fn decode_b(
                 }
                 delta_q *= 1 << frame_hdr.delta.q.res_log2;
             }
-            let last_qidx = clip(ts.last_qidx.get() as c_int + delta_q, 1, 255);
+            let last_qidx = clip(ts.last_qidx.get() as i32 + delta_q, 1, 255);
             ts.last_qidx.set(last_qidx);
             if have_delta_q && debug_block_info!(f, t.b) {
                 println!(
@@ -1483,12 +1480,12 @@ fn decode_b(
                         &mut ts_c.msac,
                         &mut ts_c.cdf.m.delta_lf[delta_lf_index],
                         3,
-                    ) as c_int;
+                    ) as i32;
                     if delta_lf == 3 {
                         let n_bits = 1 + rav1d_msac_decode_bools(&mut ts_c.msac, 3) as u8;
                         delta_lf = (rav1d_msac_decode_bools(&mut ts_c.msac, n_bits)
                             + 1
-                            + (1 << n_bits)) as c_int;
+                            + (1 << n_bits)) as i32;
                     }
                     if delta_lf != 0 {
                         if rav1d_msac_decode_bool_equi(&mut ts_c.msac) {
@@ -1496,7 +1493,7 @@ fn decode_b(
                         }
                         delta_lf *= 1 << frame_hdr.delta.lf.res_log2;
                     }
-                    last_delta_lf[i] = clip(last_delta_lf[i] as c_int + delta_lf, -63, 63);
+                    last_delta_lf[i] = clip(last_delta_lf[i] as i32 + delta_lf, -63, 63);
                     if have_delta_q && debug_block_info!(f, t.b) {
                         println!("Post-delta_lf[{}:{}]: r={}", i, delta_lf, ts_c.msac.rng);
                     }
@@ -1800,7 +1797,7 @@ fn decode_b(
                 let tx_cdf = &mut ts_c.cdf.m.txsz[(t_dim.max - 1) as usize][tctx as usize];
                 let depth =
                     rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, tx_cdf, cmp::min(t_dim.max, 2))
-                        as c_int;
+                        as i32;
 
                 for _ in 0..depth {
                     tx = t_dim.sub;
@@ -1973,8 +1970,8 @@ fn decode_b(
                 border_top += 4;
             }
         }
-        let mut src_left = t.b.x * 4 + (r#ref.x as c_int >> 3);
-        let mut src_top = t.b.y * 4 + (r#ref.y as c_int >> 3);
+        let mut src_left = t.b.x * 4 + (r#ref.x as i32 >> 3);
+        let mut src_top = t.b.y * 4 + (r#ref.y as i32 >> 3);
         let mut src_right = src_left + bw4 * 4;
         let mut src_bottom = src_top + bh4 * 4;
         let border_right = (ts.tiling.col_end + (bw4 - 1) & !(bw4 - 1)) * 4;
@@ -2424,11 +2421,11 @@ fn decode_b(
                             .frame_hdr
                             .as_ref()
                             .unwrap()
-                            .frame_offset as c_uint
+                            .frame_offset as u32
                     });
                     let jnt_ctx = get_jnt_comp_ctx(
                         seq_hdr.order_hint_n_bits,
-                        f.cur.frame_hdr.as_ref().unwrap().frame_offset as c_uint,
+                        f.cur.frame_hdr.as_ref().unwrap().frame_offset as u32,
                         ref0poc,
                         ref1poc,
                         ta,
@@ -2716,7 +2713,7 @@ fn decode_b(
             let interintra_mode;
             let interintra_type;
             let mut wedge_idx = Default::default();
-            let ii_sz_grp = DAV1D_YMODE_SIZE_CONTEXT[bs as usize] as c_int;
+            let ii_sz_grp = DAV1D_YMODE_SIZE_CONTEXT[bs as usize] as i32;
             if seq_hdr.inter_intra != 0
                 && INTERINTRA_ALLOWED_MASK & (1 << bs as u8) != 0
                 && rav1d_msac_decode_bool_adapt(
@@ -2730,7 +2727,7 @@ fn decode_b(
                     InterIntraPredMode::COUNT as u8 - 1,
                 ) as usize)
                 .expect("valid variant");
-                let wedge_ctx = DAV1D_WEDGE_CTX_LUT[bs as usize] as c_int;
+                let wedge_ctx = DAV1D_WEDGE_CTX_LUT[bs as usize] as i32;
                 let ii_type = if rav1d_msac_decode_bool_adapt(
                     &mut ts_c.msac,
                     &mut ts_c.cdf.mi.interintra_wedge[wedge_ctx as usize],
@@ -2792,12 +2789,12 @@ fn decode_b(
                     r#ref[0],
                     &mut mask,
                 );
-                let allow_warp = (f.svc[r#ref[0] as usize][0].scale == 0
+                let allow_warp = f.svc[r#ref[0] as usize][0].scale == 0
                     && !frame_hdr.force_integer_mv
                     && frame_hdr.warp_motion != 0
-                    && mask[0] | mask[1] != 0) as c_int;
+                    && mask[0] | mask[1] != 0;
 
-                motion_mode = MotionMode::from_repr(if allow_warp != 0 {
+                motion_mode = MotionMode::from_repr(if allow_warp {
                     rav1d_msac_decode_symbol_adapt4(
                         &mut ts_c.msac,
                         &mut ts_c.cdf.mi.motion_mode[bs as usize],
@@ -2967,7 +2964,7 @@ fn decode_b(
         let frame_hdr = f.frame_hdr();
         if frame_hdr.loopfilter.level_y != [0, 0] {
             let is_globalmv =
-                (inter_mode == if is_comp { GLOBALMV_GLOBALMV } else { GLOBALMV }) as c_int;
+                inter_mode == if is_comp { GLOBALMV_GLOBALMV } else { GLOBALMV };
             let tx_split = [tx_split0 as u16, tx_split1];
             let mut ytx = max_ytx;
             let mut uvtx = b.uvtx;
@@ -2992,7 +2989,7 @@ fn decode_b(
                 // we pass the indices as args, which are then applied at the use sites.
                 &lflvl[b.seg_id.get()],
                 (r#ref[0] + 1) as usize,
-                is_globalmv == 0,
+                !is_globalmv,
                 t.b,
                 f.w4,
                 f.h4,
@@ -3224,7 +3221,7 @@ fn decode_b(
                         mc_lowest_px(
                             &mut lowest_px[inter.r#ref[0] as usize][1],
                             t.b.y & !ss_ver,
-                            bh4 << (bh4 == ss_ver) as c_int,
+                            bh4 << (bh4 == ss_ver) as i32,
                             inter.nd.one_d.mv[0].y,
                             ss_ver,
                             &f.svc[inter.r#ref[0] as usize][1],
@@ -3698,7 +3695,7 @@ fn decode_sb(
     Ok(())
 }
 
-fn reset_context(ctx: &mut BlockContext, keyframe: bool, pass: c_int) {
+fn reset_context(ctx: &mut BlockContext, keyframe: bool, pass: i32) {
     ctx.intra.get_mut().0.fill(keyframe.into());
     ctx.uvmode.get_mut().0.fill(DC_PRED);
     if keyframe {
@@ -3769,11 +3766,11 @@ fn setup_tile(
     tile_col: usize,
     tile_start_off: u32,
 ) {
-    let col_sb_start = frame_hdr.tiling.col_start_sb[tile_col] as c_int;
-    let col_sb128_start = col_sb_start >> (seq_hdr.sb128 == 0) as c_int;
-    let col_sb_end = frame_hdr.tiling.col_start_sb[tile_col + 1] as c_int;
-    let row_sb_start = frame_hdr.tiling.row_start_sb[tile_row] as c_int;
-    let row_sb_end = frame_hdr.tiling.row_start_sb[tile_row + 1] as c_int;
+    let col_sb_start = frame_hdr.tiling.col_start_sb[tile_col] as i32;
+    let col_sb128_start = col_sb_start >> (seq_hdr.sb128 == 0) as i32;
+    let col_sb_end = frame_hdr.tiling.col_start_sb[tile_col + 1] as i32;
+    let row_sb_start = frame_hdr.tiling.row_start_sb[tile_row] as i32;
+    let row_sb_end = frame_hdr.tiling.row_start_sb[tile_row + 1] as i32;
 
     let size_mul = &SS_SIZE_MUL[cur.p.layout];
     for p in 0..2 {
@@ -3793,7 +3790,7 @@ fn setup_tile(
             });
         ts.frame_thread[p].cf.set(if !frame_thread.cf.is_empty() {
             let bpc = BPC::from_bitdepth_max(bitdepth_max);
-            bpc.coef_stride(tile_start_off * size_mul[0] as u32 >> (seq_hdr.hbd == 0) as c_int)
+            bpc.coef_stride(tile_start_off * size_mul[0] as u32 >> (seq_hdr.hbd == 0) as i32)
         } else {
             0
         });
@@ -3834,7 +3831,7 @@ fn setup_tile(
 
         let lr_ref = if diff_width {
             let ss_hor = (p != 0 && cur.p.layout != Rav1dPixelLayout::I444) as u8;
-            let d = frame_hdr.size.super_res.width_scale_denominator as c_int;
+            let d = frame_hdr.size.super_res.width_scale_denominator as i32;
             let unit_size_log2 = frame_hdr.restoration.unit_size[(p != 0) as usize];
             let rnd = (8 << unit_size_log2) - 1;
             let shift = unit_size_log2 + 3;
@@ -3912,8 +3909,8 @@ fn read_restoration_info(
         k: u8,
         adjustment: i8,
     ) -> i8 {
-        (rav1d_msac_decode_subexp(&mut ts_c.msac, (r#ref + adjustment) as c_uint, 8 << k, k)
-            - adjustment as c_int) as i8
+        (rav1d_msac_decode_subexp(&mut ts_c.msac, (r#ref + adjustment) as u32, 8 << k, k)
+            - adjustment as i32) as i8
     }
 
     match lr.r#type {
@@ -3997,7 +3994,7 @@ fn check_trailing_bits_after_symbol_coder(msac: &MsacContext) -> Result<(), ()> 
         return Err(());
     }
 
-    return Ok(());
+    Ok(())
 }
 
 pub(crate) fn rav1d_decode_tile_sbrow(
@@ -4016,8 +4013,8 @@ pub(crate) fn rav1d_decode_tile_sbrow(
     let tile_row = ts.tiling.row;
     let tile_col = ts.tiling.col;
     let frame_hdr = &***f.frame_hdr.as_ref().unwrap();
-    let col_sb_start = frame_hdr.tiling.col_start_sb[tile_col as usize] as c_int;
-    let col_sb128_start = col_sb_start >> (seq_hdr.sb128 == 0) as c_int;
+    let col_sb_start = frame_hdr.tiling.col_start_sb[tile_col as usize] as i32;
+    let col_sb128_start = col_sb_start >> (seq_hdr.sb128 == 0) as i32;
 
     if frame_hdr.frame_type.is_inter_or_switch() || frame_hdr.allow_intrabc {
         t.rt = rav1d_refmvs_tile_sbrow_init(
@@ -4044,7 +4041,7 @@ pub(crate) fn rav1d_decode_tile_sbrow(
     );
     if t.frame_thread.pass == 2 {
         let off_2pass = if c.tc.len() > 1 {
-            f.sb128w * frame_hdr.tiling.rows as c_int
+            f.sb128w * frame_hdr.tiling.rows as i32
         } else {
             0
         };
@@ -4109,15 +4106,15 @@ pub(crate) fn rav1d_decode_tile_sbrow(
                 continue;
             }
 
-            let ss_ver = (p != 0 && f.cur.p.layout == Rav1dPixelLayout::I420) as c_int;
-            let ss_hor = (p != 0 && f.cur.p.layout != Rav1dPixelLayout::I444) as c_int;
+            let ss_ver = (p != 0 && f.cur.p.layout == Rav1dPixelLayout::I420) as i32;
+            let ss_hor = (p != 0 && f.cur.p.layout != Rav1dPixelLayout::I444) as i32;
             let unit_size_log2 = frame_hdr.restoration.unit_size[(p != 0) as usize];
             let y = t.b.y * 4 >> ss_ver;
             let h = f.cur.p.h + ss_ver >> ss_ver;
 
             let unit_size = 1 << unit_size_log2;
-            let mask = (unit_size - 1) as c_uint;
-            if y as c_uint & mask != 0 {
+            let mask = (unit_size - 1) as u32;
+            if y as u32 & mask != 0 {
                 continue;
             }
             let half_unit = unit_size >> 1;
@@ -4133,7 +4130,7 @@ pub(crate) fn rav1d_decode_tile_sbrow(
                 let w = f.sr_cur.p.p.w + ss_hor >> ss_hor;
                 let n_units = cmp::max(1, w + half_unit >> unit_size_log2);
 
-                let d = frame_hdr.size.super_res.width_scale_denominator as c_int;
+                let d = frame_hdr.size.super_res.width_scale_denominator as i32;
                 let rnd = unit_size * 8 - 1;
                 let shift = unit_size_log2 + 3;
                 let x0 = (4 * t.b.x * d >> ss_hor) + rnd >> shift;
@@ -4151,7 +4148,7 @@ pub(crate) fn rav1d_decode_tile_sbrow(
                 }
             } else {
                 let x = 4 * t.b.x >> ss_hor;
-                if x as c_uint & mask != 0 {
+                if x as u32 & mask != 0 {
                     continue;
                 }
                 let w = f.cur.p.w + ss_hor >> ss_hor;
@@ -4213,7 +4210,7 @@ pub(crate) fn rav1d_decode_tile_sbrow(
         start_y..start_y + len_y,
         &t.l.tx_lpf_y.index(start_lpf_y..start_lpf_y + len_y),
     );
-    let ss_ver = (f.cur.p.layout == Rav1dPixelLayout::I420) as c_int;
+    let ss_ver = (f.cur.p.layout == Rav1dPixelLayout::I420) as i32;
     align_h >>= ss_ver;
     let start_uv = (align_h * tile_col + (t.b.y >> ss_ver)) as usize;
     let len_uv = (sb_step >> ss_ver) as usize;
@@ -4249,13 +4246,13 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
     for tile_row in 0..frame_hdr.tiling.rows {
         f.lf.start_of_tile_row[sby as usize] = tile_row;
         sby += 1;
-        while sby < frame_hdr.tiling.row_start_sb[(tile_row + 1) as usize] as c_int {
+        while sby < frame_hdr.tiling.row_start_sb[(tile_row + 1) as usize] as i32 {
             f.lf.start_of_tile_row[sby as usize] = 0;
             sby += 1;
         }
     }
 
-    let n_ts = frame_hdr.tiling.cols as c_int * frame_hdr.tiling.rows as c_int;
+    let n_ts = frame_hdr.tiling.cols as i32 * frame_hdr.tiling.rows as i32;
     if c.fc.len() > 1 {
         // TODO: Fallible allocation
         f.frame_thread.tile_start_off.resize(n_ts as usize, 0);
@@ -4264,15 +4261,15 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
     f.ts.resize_with(n_ts as usize, Default::default);
 
     let a_sz = f.sb128w
-        * frame_hdr.tiling.rows as c_int
-        * (1 + (c.fc.len() > 1 && c.tc.len() > 1) as c_int);
+        * frame_hdr.tiling.rows as i32
+        * (1 + (c.fc.len() > 1 && c.tc.len() > 1) as i32);
     // TODO: Fallible allocation
     f.a.resize_with(a_sz as usize, Default::default);
 
     let num_sb128 = f.sb128w * f.sb128h;
     let size_mul = &SS_SIZE_MUL[f.cur.p.layout];
     let seq_hdr = &***f.seq_hdr.as_ref().unwrap();
-    let hbd = (seq_hdr.hbd != 0) as c_int;
+    let hbd = (seq_hdr.hbd != 0) as i32;
     if c.fc.len() > 1 {
         let mut tile_idx = 0;
         let sb_step4 = f.sb_step as u32 * 4;
@@ -4308,13 +4305,13 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
             }
         }
 
-        let cbi_sz = num_sb128 * size_mul[0] as c_int;
+        let cbi_sz = num_sb128 * size_mul[0] as i32;
         // TODO: Fallible allocation
         f.frame_thread
             .cbi
             .resize_with(cbi_sz as usize * 32 * 32 / 4, Default::default);
 
-        let cf_sz = (num_sb128 * size_mul[0] as c_int) << hbd;
+        let cf_sz = (num_sb128 * size_mul[0] as i32) << hbd;
         // TODO: Fallible allocation
         f.frame_thread
             .cf
@@ -4327,7 +4324,7 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
                 .pal
                 .resize(num_sb128 as usize * 16 * 16 << hbd);
 
-            let pal_idx_sz = num_sb128 * size_mul[1] as c_int;
+            let pal_idx_sz = num_sb128 * size_mul[1] as i32;
             // TODO: Fallible allocation
             f.frame_thread
                 .pal_idx
@@ -4341,8 +4338,8 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
     // update allocation of block contexts for above
     let mut y_stride = f.cur.stride[0];
     let mut uv_stride = f.cur.stride[1];
-    let has_resize = (frame_hdr.size.width[0] != frame_hdr.size.width[1]) as c_int;
-    let need_cdef_lpf_copy = (c.tc.len() > 1 && has_resize != 0) as c_int;
+    let has_resize = frame_hdr.size.width[0] != frame_hdr.size.width[1];
+    let need_cdef_lpf_copy = (c.tc.len() > 1 && has_resize) as i32;
     let mut alloc_sz: usize = 64;
     alloc_sz += (y_stride.unsigned_abs() * 4 * f.sbh as usize) << need_cdef_lpf_copy;
     alloc_sz += (uv_stride.unsigned_abs() * 8 * f.sbh as usize) << need_cdef_lpf_copy;
@@ -4516,8 +4513,8 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
                     cmp::min(
                         (get_poc_diff(
                             seq_hdr.order_hint_n_bits,
-                            ref_pocs[ij] as c_int,
-                            f.cur.frame_hdr.as_ref().unwrap().frame_offset as c_int,
+                            ref_pocs[ij] as i32,
+                            f.cur.frame_hdr.as_ref().unwrap().frame_offset as i32,
                         ))
                         .unsigned_abs(),
                         31,
@@ -4652,7 +4649,7 @@ pub(crate) fn rav1d_decode_frame_init_cdf(
                 ctx,
                 frame_hdr.frame_type.is_key_or_intra(),
                 if uses_2pass {
-                    1 + (n >= sb128w * rows) as c_int
+                    1 + (n >= sb128w * rows) as i32
                 } else {
                     0
                 },
@@ -4699,7 +4696,7 @@ fn rav1d_decode_frame_main(c: &Rav1dContext, f: &mut Rav1dFrameData) -> Rav1dRes
                     &f.rf,
                     &f.mvs,
                     &f.ref_mvs,
-                    tile_row as c_int,
+                    tile_row as i32,
                     0,
                     f.bw >> 1,
                     t.b.y >> 1,
@@ -4829,7 +4826,7 @@ pub(crate) fn rav1d_decode_frame(c: &Rav1dContext, fc: &Rav1dFrameContext) -> Ra
     rav1d_decode_frame_exit(c, fc, res)
 }
 
-fn get_upscale_x0(in_w: c_int, out_w: c_int, step: c_int) -> c_int {
+fn get_upscale_x0(in_w: i32, out_w: i32, step: i32) -> i32 {
     let err = out_w * step - (in_w << 14);
     let x0 = (-(out_w - in_w << 13) + (out_w >> 1)) / out_w + 128 - err / 2;
     x0 & 0x3fff
@@ -5083,7 +5080,7 @@ pub fn rav1d_submit_frame(c: &Rav1dContext, state: &mut Rav1dState) -> Rav1dResu
     }
     if frame_hdr.size.width[0] != frame_hdr.size.width[1] {
         f.resize_step[0] = scale_fac(f.cur.p.w, f.sr_cur.p.p.w);
-        let ss_hor = (f.cur.p.layout != Rav1dPixelLayout::I444) as c_int;
+        let ss_hor = (f.cur.p.layout != Rav1dPixelLayout::I444) as i32;
         let in_cw = f.cur.p.w + ss_hor >> ss_hor;
         let out_cw = f.sr_cur.p.p.w + ss_hor >> ss_hor;
         f.resize_step[1] = scale_fac(in_cw, out_cw);
@@ -5107,17 +5104,17 @@ pub fn rav1d_submit_frame(c: &Rav1dContext, state: &mut Rav1dState) -> Rav1dResu
     f.bh = (frame_hdr.size.height + 7 >> 3) << 1;
     f.sb128w = f.bw + 31 >> 5;
     f.sb128h = f.bh + 31 >> 5;
-    f.sb_shift = 4 + seq_hdr.sb128 as c_int;
+    f.sb_shift = 4 + seq_hdr.sb128 as i32;
     f.sb_step = 16 << seq_hdr.sb128;
     f.sbh = f.bh + f.sb_step - 1 >> f.sb_shift;
-    f.b4_stride = (f.bw + 31 & !31) as ptrdiff_t;
+    f.b4_stride = (f.bw + 31 & !31) as isize;
     f.bitdepth_max = (1 << f.cur.p.bpc) - 1;
     fc.task_thread.error.store(0, Ordering::Relaxed);
-    let uses_2pass = (c.fc.len() > 1) as c_int;
+    let uses_2pass = (c.fc.len() > 1) as i32;
     let cols = frame_hdr.tiling.cols;
     let rows = frame_hdr.tiling.rows;
     fc.task_thread.task_counter.store(
-        cols as c_int * rows as c_int + f.sbh << uses_2pass,
+        cols as i32 * rows as i32 + f.sbh << uses_2pass,
         Ordering::SeqCst,
     );
 
@@ -5131,7 +5128,7 @@ pub fn rav1d_submit_frame(c: &Rav1dContext, state: &mut Rav1dState) -> Rav1dResu
         );
         if !frame_hdr.allow_intrabc {
             for i in 0..7 {
-                f.refpoc[i] = f.refp[i].p.frame_hdr.as_ref().unwrap().frame_offset as c_uint;
+                f.refpoc[i] = f.refp[i].p.frame_hdr.as_ref().unwrap().frame_offset as u32;
             }
         } else {
             f.refpoc.fill(0);
@@ -5205,7 +5202,7 @@ pub fn rav1d_submit_frame(c: &Rav1dContext, state: &mut Rav1dState) -> Rav1dResu
     }
 
     // update references etc.
-    let refresh_frame_flags = frame_hdr.refresh_frame_flags as c_uint;
+    let refresh_frame_flags = frame_hdr.refresh_frame_flags as u32;
     for i in 0..8 {
         if refresh_frame_flags & (1 << i) != 0 {
             if state.refs[i].p.p.frame_hdr.is_some() {

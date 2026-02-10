@@ -44,7 +44,6 @@
     clippy::redundant_closure,
     clippy::redundant_pattern_matching,
     clippy::redundant_static_lifetimes,
-    clippy::search_is_some,
     clippy::too_many_arguments,
     clippy::type_complexity,
     clippy::unit_arg,
