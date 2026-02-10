@@ -701,7 +701,7 @@ fn read_vartx_tree(
     // var-tx tree coding
     let mut tx_split = [0u16; 2];
     let mut max_ytx = DAV1D_MAX_TXFM_SIZE_FOR_BS[bs as usize][0];
-    let frame_hdr = &***f.frame_hdr.as_ref().unwrap();
+    let frame_hdr = f.frame_hdr();
     let txfm_mode = frame_hdr.txfm_mode;
     let uvtx;
     if b.skip == 0 && (frame_hdr.segmentation.lossless[b.seg_id.get()] || max_ytx == TxfmSize::S4x4)
@@ -1000,7 +1000,7 @@ fn obmc_lowest_px(
         while x < w4 && i < cmp::min(b_dim[2] as i32, 4) {
             let a_r = *r.index(ri[0] + t.b.x as usize + x as usize + 1);
             let a_b_dim = a_r.bs.dimensions();
-            if a_r.r#ref.r#ref[0] as i32 > 0 {
+            if a_r.r#ref.r#ref[0] > 0 {
                 let oh4 = cmp::min(b_dim[1] as i32, 16) >> 1;
                 mc_lowest_px(
                     &mut dst[a_r.r#ref.r#ref[0] as usize - 1][is_chroma as usize],
@@ -1021,7 +1021,7 @@ fn obmc_lowest_px(
         while y < h4 && i < cmp::min(b_dim[3] as i32, 4) {
             let l_r = *r.index(ri[y as usize + 1 + 1] + t.b.x as usize - 1);
             let l_b_dim = l_r.bs.dimensions();
-            if l_r.r#ref.r#ref[0] as i32 > 0 {
+            if l_r.r#ref.r#ref[0] > 0 {
                 let oh4 = iclip(l_b_dim[1] as i32, 2, b_dim[1] as i32);
                 mc_lowest_px(
                     &mut dst[l_r.r#ref.r#ref[0] as usize - 1][is_chroma as usize],
@@ -1048,7 +1048,7 @@ fn decode_b(
     bp: BlockPartition,
     intra_edge_flags: EdgeFlags,
 ) -> Result<(), ()> {
-    let seq_hdr = &***f.seq_hdr.as_ref().unwrap();
+    let seq_hdr = f.seq_hdr();
     use std::fmt;
 
     /// Helper struct for printing a number as a signed hexidecimal value.
@@ -1092,7 +1092,7 @@ fn decode_b(
     let has_chroma = f.cur.p.layout != Rav1dPixelLayout::I400
         && (bw4 > ss_hor || t.b.x & 1 != 0)
         && (bh4 > ss_ver || t.b.y & 1 != 0);
-    let frame_type = f.frame_hdr.as_ref().unwrap().frame_type;
+    let frame_type = f.frame_hdr().frame_type;
 
     let FrameThreadPassState::First(ts_c) = pass else {
         match &b.ii {
@@ -1237,7 +1237,7 @@ fn decode_b(
 
     // segment_id (if seg_feature for skip/ref/gmv is enabled)
     let mut seg_pred = false;
-    let frame_hdr: &Rav1dFrameHeader = &f.frame_hdr.as_ref().unwrap();
+    let frame_hdr = f.frame_hdr();
     if frame_hdr.segmentation.enabled != 0 {
         if frame_hdr.segmentation.update_map == 0 {
             b.seg_id = f
@@ -2713,24 +2713,24 @@ fn decode_b(
             let interintra_mode;
             let interintra_type;
             let mut wedge_idx = Default::default();
-            let ii_sz_grp = DAV1D_YMODE_SIZE_CONTEXT[bs as usize] as i32;
+            let ii_sz_grp = DAV1D_YMODE_SIZE_CONTEXT[bs as usize] as usize;
             if seq_hdr.inter_intra != 0
                 && INTERINTRA_ALLOWED_MASK & (1 << bs as u8) != 0
                 && rav1d_msac_decode_bool_adapt(
                     &mut ts_c.msac,
-                    &mut ts_c.cdf.mi.interintra[ii_sz_grp as usize],
+                    &mut ts_c.cdf.mi.interintra[ii_sz_grp],
                 )
             {
                 interintra_mode = InterIntraPredMode::from_repr(rav1d_msac_decode_symbol_adapt4(
                     &mut ts_c.msac,
-                    &mut ts_c.cdf.mi.interintra_mode[ii_sz_grp as usize],
+                    &mut ts_c.cdf.mi.interintra_mode[ii_sz_grp],
                     InterIntraPredMode::COUNT as u8 - 1,
                 ) as usize)
                 .expect("valid variant");
-                let wedge_ctx = DAV1D_WEDGE_CTX_LUT[bs as usize] as i32;
+                let wedge_ctx = DAV1D_WEDGE_CTX_LUT[bs as usize] as usize;
                 let ii_type = if rav1d_msac_decode_bool_adapt(
                     &mut ts_c.msac,
-                    &mut ts_c.cdf.mi.interintra_wedge[wedge_ctx as usize],
+                    &mut ts_c.cdf.mi.interintra_wedge[wedge_ctx],
                 ) {
                     InterIntraType::Wedge
                 } else {
@@ -2740,7 +2740,7 @@ fn decode_b(
                 if ii_type == InterIntraType::Wedge {
                     wedge_idx = rav1d_msac_decode_symbol_adapt16(
                         &mut ts_c.msac,
-                        &mut ts_c.cdf.mi.wedge_idx[wedge_ctx as usize],
+                        &mut ts_c.cdf.mi.wedge_idx[wedge_ctx],
                         15,
                     ) as u8;
                 }
@@ -3053,7 +3053,7 @@ fn decode_b(
     }
 
     // update contexts
-    let frame_hdr = &***f.frame_hdr.as_ref().unwrap();
+    let frame_hdr = f.frame_hdr();
     if frame_hdr.segmentation.enabled != 0 && frame_hdr.segmentation.update_map != 0 {
         // Need checked casts here because we're using `from_raw_parts_mut` and an overflow would be UB.
         let [by, bx, bh4, bw4] = [t.b.y, t.b.x, bh4, bw4].map(|it| usize::try_from(it).unwrap());
@@ -3359,7 +3359,7 @@ fn decode_sb(
         );
     }
 
-    let frame_hdr = &***f.frame_hdr.as_ref().unwrap();
+    let frame_hdr = f.frame_hdr();
 
     let bp;
     let mut bx8 = 0;
@@ -4002,7 +4002,7 @@ pub(crate) fn rav1d_decode_tile_sbrow(
     t: &mut Rav1dTaskContext,
     f: &Rav1dFrameData,
 ) -> Result<(), ()> {
-    let seq_hdr = &***f.seq_hdr.as_ref().unwrap();
+    let seq_hdr = f.seq_hdr();
     let root_bl = if seq_hdr.sb128 != 0 {
         BlockLevel::Bl128x128
     } else {
@@ -4012,7 +4012,7 @@ pub(crate) fn rav1d_decode_tile_sbrow(
     let sb_step = f.sb_step;
     let tile_row = ts.tiling.row;
     let tile_col = ts.tiling.col;
-    let frame_hdr = &***f.frame_hdr.as_ref().unwrap();
+    let frame_hdr = f.frame_hdr();
     let col_sb_start = frame_hdr.tiling.col_start_sb[tile_col as usize] as i32;
     let col_sb128_start = col_sb_start >> (seq_hdr.sb128 == 0) as i32;
 
@@ -4099,7 +4099,7 @@ pub(crate) fn rav1d_decode_tile_sbrow(
             let cdef_idx = &cdef_idx[t.cur_sb_cdef_idx..];
             cdef_idx[0].set(-1);
         }
-        let frame_hdr = &***f.frame_hdr.as_ref().unwrap();
+        let frame_hdr = f.frame_hdr();
         // Restoration filter
         for p in 0..3 {
             if (f.lf.restore_planes.bits() >> p) & 1 == 0 {
@@ -4687,8 +4687,8 @@ fn rav1d_decode_frame_main(c: &Rav1dContext, f: &mut Rav1dFrameData) -> Rav1dRes
         let sbh_end = cmp::min(sbh_end.into(), f.sbh);
 
         for sby in sbh_start.into()..sbh_end {
-            let seq_hdr = &***f.seq_hdr.as_ref().unwrap();
-            let frame_hdr = &***f.frame_hdr.as_ref().unwrap();
+            let seq_hdr = f.seq_hdr();
+            let frame_hdr = f.frame_hdr();
             t.b.y = sby << 4 + seq_hdr.sb128;
             let by_end = t.b.y + f.sb_step >> 1;
             if frame_hdr.use_ref_frame_mvs != 0 {
@@ -4807,7 +4807,7 @@ pub(crate) fn rav1d_decode_frame(c: &Rav1dContext, fc: &Rav1dFrameContext) -> Ra
                 res = fc.task_thread.retval.try_lock().unwrap().err_or(());
             } else {
                 res = rav1d_decode_frame_main(c, &mut f);
-                let frame_hdr = &***f.frame_hdr.as_ref().unwrap();
+                let frame_hdr = f.frame_hdr();
                 if res.is_ok() && frame_hdr.refresh_context != 0 && fc.task_thread.update_set.get()
                 {
                     rav1d_cdf_thread_update(
@@ -4895,7 +4895,7 @@ pub fn rav1d_submit_frame(c: &Rav1dContext, state: &mut Rav1dState) -> Rav1dResu
     ) {
         fc.task_thread.error.store(1, Ordering::Relaxed);
         let _ = mem::take(&mut *fc.in_cdf.try_write().unwrap());
-        if f.frame_hdr.as_ref().unwrap().refresh_context != 0 {
+        if f.frame_hdr().refresh_context != 0 {
             let _ = mem::take(&mut f.out_cdf);
         }
         for i in 0..7 {
