@@ -304,17 +304,15 @@ fn neg_deinterleave(diff: u8, r#ref: SegmentId, max: u8) -> u8 {
         } else {
             diff
         }
-    } else {
-        if diff <= 2 * (max - r#ref - 1) {
-            if diff & 1 != 0 {
-                r#ref + (diff + 1 >> 1)
-            } else {
-                r#ref - (diff >> 1)
-            }
+    } else if diff <= 2 * (max - r#ref - 1) {
+        if diff & 1 != 0 {
+            r#ref + (diff + 1 >> 1)
         } else {
-            // The C code returns a signed integer which is immediately cast to `uint8_t`
-            max.wrapping_sub(diff + 1)
+            r#ref - (diff >> 1)
         }
+    } else {
+        // The C code returns a signed integer which is immediately cast to `uint8_t`
+        max.wrapping_sub(diff + 1)
     }
 }
 
@@ -498,7 +496,7 @@ fn derive_warpmv(
     let mut mvd = [0; 8];
     let mut ret = 0;
     let thresh = 4 * iclip(cmp::max(bw4, bh4), 4, 28);
-    for (mvd, pts) in std::iter::zip(&mut mvd[..np], &pts[..np]) {
+    for (mvd, pts) in iter::zip(&mut mvd[..np], &pts[..np]) {
         *mvd = (pts[1][0] - pts[0][0] - mv.x as i32).abs()
             + (pts[1][1] - pts[0][1] - mv.y as i32).abs();
         if *mvd > thresh {
@@ -3247,28 +3245,9 @@ fn decode_b(
             } else {
                 // y
                 let refmvs = || {
-                    std::iter::zip(inter.r#ref, inter.nd.one_d.mv)
+                    iter::zip(inter.r#ref, inter.nd.one_d.mv)
                         .map(|(r#ref, mv)| (r#ref as usize, mv))
                 };
-                for (r#ref, mv) in refmvs() {
-                    if inter.inter_mode == GLOBALMV_GLOBALMV && f.gmv_warp_allowed[r#ref] != 0 {
-                        affine_lowest_px_luma(
-                            t,
-                            &mut lowest_px[r#ref][0],
-                            b_dim,
-                            &frame_hdr.gmv[r#ref],
-                        );
-                    } else {
-                        mc_lowest_px(
-                            &mut lowest_px[r#ref][0],
-                            t.b.y,
-                            bh4,
-                            mv.y,
-                            0,
-                            &f.svc[r#ref][1],
-                        );
-                    }
-                }
                 for (r#ref, mv) in refmvs() {
                     if inter.inter_mode == GLOBALMV_GLOBALMV && f.gmv_warp_allowed[r#ref] != 0 {
                         affine_lowest_px_luma(
@@ -3825,7 +3804,7 @@ fn setup_tile(
         )
     };
     for p in 0..3 {
-        if !((lf.restore_planes.bits() >> p) & 1 != 0) {
+        if (lf.restore_planes.bits() >> p) & 1 == 0 {
             continue;
         }
 
